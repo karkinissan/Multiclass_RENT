@@ -471,9 +471,11 @@ class RENT_Base(ABC):
         weights_df = pd.DataFrame()
         for k in self._weight_dict.keys():
             if k[0] == self._best_C and k[1] == self._best_l1_ratio:
-                weights_df = weights_df.append( \
-                        pd.DataFrame(self._weight_dict[k]))
-        weights_df.index = ['mod {0}'.format(x+1) for x in range(self._K)]
+                weights_df = pd.concat([weights_df, pd.DataFrame(self._weight_dict[k])])
+        if self._num_classes>2:
+            weights_df.index = ['mod {0}_{1}'.format(x + 1,y+1) for x in range(self._K) for y in range(self._num_classes)]
+        else:
+            weights_df.index = ['mod {0}'.format(x+1) for x in range(self._K)]
         weights_df.columns = self._feat_names
         
         if binary == True:
