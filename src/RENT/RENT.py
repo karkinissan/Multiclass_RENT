@@ -15,6 +15,7 @@ import time
 import warnings
 import hoggorm as ho
 import hoggormplot as hopl
+from tqdm import tqdm
 
 from abc import ABC, abstractmethod
 from itertools import combinations, combinations_with_replacement
@@ -271,7 +272,7 @@ class RENT_Base(ABC):
         start = time.time()
         # Call parallelization function
         Parallel(n_jobs=-1, verbose=0, backend='threading')(
-             map(delayed(self.run_parallel), range(self._K)))
+             map(delayed(self.run_parallel), tqdm(range(self._K))))
         ende = time.time()
         self._runtime = ende-start
 
@@ -358,7 +359,8 @@ class RENT_Base(ABC):
         """
         if not hasattr(self, '_best_C'):
             sys.exit('Run train() first!')
-
+        print("Best C:", self._best_C)
+        print("Best L1_ratio:", self._best_l1_ratio)
         #Loop through all K models
         weight_list = [self._weight_dict[(self._best_C,
                                                  self._best_l1_ratio,
