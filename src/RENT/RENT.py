@@ -91,9 +91,9 @@ class RENT_Base(ABC):
     __slots__=["_data", "_target", "_feat_names", "_C", "_l1_ratios", "_autoEnetParSel",
                "_BIC", "_poly", "_testsize_range", "_K", "_scale", "_random_state",
                "_verbose", "_summary_df", "_score_dict", "_BIC_df", "_best_C",
-               "_best_l1_ratio", "_indices", "_polynom", "_runtime", "_scores_df", "_combination", 
+               "_best_l1_ratio", "_indices", "_polynom", "_runtime", "_scores_df", "_combination",
                "_zeros", "_perc", "_self_var", "_X_test", "_test_data", "_zeros_df","_sel_var",
-               "_incorrect_labels", "_pp_data"]
+               "_incorrect_labels", "_pp_data", "_num_classes"]
 
     def __init__(self, data, target, feat_names=[], C=[1,10], l1_ratios = [0.6],
                  autoEnetParSel=True, BIC=False, poly='OFF',testsize_range=(0.2, 0.6), 
@@ -152,6 +152,8 @@ class RENT_Base(ABC):
 
         if isinstance(self._target, pd.Series):
             self._target.index = self._indices
+
+        self._num_classes = len(np.unique(self._target))
 
         # If no feature names are given, create some
         if len(self._feat_names) == 0:
@@ -298,10 +300,12 @@ class RENT_Base(ABC):
             for C in self._C:
                 count = 0
                 for K in range(self._K):
-                    nz = \
-                    len(np.where(pd.DataFrame(self._weight_dict[(C, l1, K)\
-])==0)[0])
-                    count = count + nz / len(self._feat_names)
+                    # nz = number of features where the coeff is zero for the combination of
+                    # C, l1 and K
+                    nz = len(np.where(pd.DataFrame(self._weight_dict[(C, l1, K)])==0)[0])
+                    # count += % of zero coeffs
+                    count = count + nz / len(self._feat_names) / self._num_classes
+                # Divide by total number of train test splits??? Why?
                 count = count / (self._K)
                 self._zeros_df.loc[l1, C] = count
 
@@ -363,13 +367,15 @@ class RENT_Base(ABC):
 
         #Compute results based on weights
         counts = np.count_nonzero(weight_array, axis=0)
-        self._perc = counts / len(weight_list)
+        self._perc = counts / len(weight_array)
+
         means = np.mean(weight_array, axis=0)
+        abs_means = np.apply_along_axis(self.calculate_mean, 0, weight_array)
         stds = np.std(weight_array, axis=0)
+
         signum = np.apply_along_axis(self._sign_vote, 0, weight_array)
         t_test = t.cdf(
-            abs(means / np.sqrt((stds ** 2) / len(weight_list))), \
-                (len(weight_list)-1))
+            abs(abs_means / np.sqrt((stds ** 2) / len(weight_list))),(len(weight_list)-1))
 
         # Conduct a dataframe that stores the results for the criteria
         summary = np.vstack([self._perc, signum, t_test])
@@ -985,7 +991,18 @@ class RENT_Base(ABC):
         <numeric value>
             Inverted value. 
         """
-        return np.abs(np.sum(np.sign(arr))) / len(arr)
+        # return np.abs(np.sum(np.sign(arr))) / len(arr)
+        return np.sum(np.abs(np.sum(np.sign(arr.reshape(-1, self._num_classes)),
+                                    axis=0))) / len(arr)
+
+    def calculate_mean(self, arr):
+        """
+        Each array is a (K,num_classes) size array.
+        Which is the coefficients for every train test split model.
+        Calcuate column wise mean of the values in the array.
+        The column wise means are then absoluted and another mean is taken.
+        """
+        return np.mean(np.abs(np.mean(arr.reshape(-1, self._num_classes), axis=0)))
 
     def _min_max(self, arr):
         """
@@ -2169,3 +2186,173 @@ class RENT_Regression(RENT_Base):
             model.predict(test_VS2)) for K in range(num_permutations)]
         return score, VS1, VS2
     
+
+class RENT_Multi_Classification(RENT_Classification):
+    """
+    This class carries out RENT on a given multiclass classification dataset.
+
+    PARAMETERS
+    ----------
+    data : <numpy array> or <pandas dataframe>
+        Dataset on which feature selection is performed. \
+            Variable types must be numeric or integer.
+    target : <numpy array> or <pandas dataframe>
+        Response variable of data.
+    feat_names : <list>
+        List holding feature names. Preferably a list of string values. \
+            If empty, feature names will be generated automatically. \
+                Default: ``feat_names=[]``.
+    C : <list of int or float values>
+        List with regularisation parameters for ``K`` models. The lower,
+        the stronger the regularization is. Default: ``C=[1,10]``.
+    l1_ratios : <list of int or float values>
+        List holding ratios between l1 and l2 penalty. Values must be in [0,1]. \
+            For pure l2 use 0, for pure l1 use 1. Default: ``l1_ratios=[0.6]``.
+    autoEnetParSel : <boolean>
+        Cross-validated elastic net hyperparameter selection.
+            - ``autoEnetParSel=True`` : peform a cross-validation pre-hyperparameter \
+                search, such that RENT runs only with one hyperparamter setting.
+            - ``autoEnetParSel=False`` : perform RENT with each combination of ``C`` \
+                and ``l1_ratios``. Default: ``autoEnetParSel=True``.
+    poly : <str>
+        Create non-linear features. Default: ``poly='OFF'``.
+            - ``poly='OFF'`` : no feature interaction.
+            - ``poly='ON'`` : feature interaction and squared features (2-polynoms).
+            - ``poly='ON_only_interactions'`` : only feature interactions, \
+                no squared features.
+    testsize_range : <tuple float>
+            Inside RENT, ``K`` models are trained, where the testsize defines the \
+                proportion of train data used for testing of a single model. The testsize
+            can either be randomly selected inside the range of ``testsize_range`` for \
+                each model or fixed by setting the two tuple entries to the same value.
+            The tuple must be in range (0,1).
+            Default: ``testsize_range=(0.2, 0.6)``.
+    scoring : <str>
+        The metric to evaluate K models. Default: ``scoring='mcc'``.
+            - ``scoring='accuracy'`` :  Accuracy
+            - ``scoring='f1'`` : F1-score
+            - ``scoring='precision'`` : Precision
+            - ``scoring='recall'``: Recall
+            - ``scoring='mcc'`` : Matthews Correlation Coefficient
+    classifier : <str>
+        Classifier with witch models are trained.
+            - ``classifier='logreg'`` : Logistic Regression
+    K : <int>
+        Number of unique train-test splits. Default: ``K=100``.
+    scale : <boolean>
+        Columnwise standardization of the ``K`` train datasets. \
+            Default: ``scale=True``.
+    random_state : <None or int>
+        Set a random state to reproduce your results. \
+            Default: ``random_state=None``.
+            - ``random_state=None`` : no random seed.
+            - ``random_state={0,1,2,...}`` : random seed set.
+    verbose : <int>
+        Track the train process if value > 1. If ``verbose = 1``, only the overview
+        of RENT input will be shown. Default: ``verbose=0``.
+
+    RETURNS
+    ------
+    <class>
+        A class that contains the RENT classification model.
+    """
+    __slots__ = ["_data", "_target", "_feat_names", "_C", "_l1_ratios", "_autoEnetParSel",
+                 "_BIC", "_poly", "_testsize_range", "_K", "_scale", "_random_state",
+                 "_verbose", "_summary_df", "_score_dict", "_BIC_df", "_best_C",
+                 "_best_l1_ratio", "_indices", "_polynom", "_runtime", "_scores_df", "_combination",
+                 "_zeros", "_perc", "_self_var", "_scores_df_cv", "_zeros_df_cv", "_test_data",
+                 "_combination_cv", "_scoring", "_classifier", "_predictions_dict", "_probas",
+                 "_pred_proba_dict", "_random_testsizes", "_weight_dict", "_weight_list",
+                 "_score_list"]
+
+    def __init__(self, data, target, feat_names=[], C=[1, 10], l1_ratios=[0.6],
+                 autoEnetParSel=True, BIC=False, poly='OFF',
+                 testsize_range=(0.2, 0.6), scoring='accuracy',
+                 classifier='logreg', K=100, scale=True, random_state=None,
+                 verbose=0):
+
+        super().__init__(data, target, feat_names, C, l1_ratios,
+                         autoEnetParSel, BIC, poly, testsize_range, scoring,
+                         classifier, K, scale,random_state, verbose)
+
+    def run_parallel(self, K):
+        """
+        If ``autoEnetParSel=False``, parallel computation of ``K`` * ``len(C)`` \
+            * ``len(l1_ratios)`` classification models. Otherwise, \
+                computation of ``K`` models.
+        PARAMETERS
+        ----------
+        K:
+            Range of train-test splits. The parameter cannot be set directly \
+                by the user but is used for an internal parallelization.
+        """
+        # Loop through all C
+        for C in self._C:
+            for l1 in self._l1_ratios:
+                X_train, X_test, y_train, y_test = train_test_split(
+                        self._data, self._target,
+                        test_size=self._random_testsizes[K],
+                        stratify=self._target, random_state=self._random_state)
+
+                self._X_test = X_test
+
+                if self._scale:
+                    sc = StandardScaler()
+                    sc.fit(X_train)
+                    X_train_std = sc.transform(X_train)
+                    X_test_std = sc.transform(X_test)
+                else:
+                    X_train_std = X_train.copy().values
+                    X_test_std = X_test.copy().values
+
+                if self._verbose > 1:
+                    print('C = ', C, 'l1 = ', l1, ', TT split = ', K)
+
+                if self._classifier == 'logreg':
+                    # Train a logistic regression model with one vs rest multiclass config.
+                    model = LogisticRegression(solver='saga',
+                                               C=C,
+                                               penalty='elasticnet',
+                                               l1_ratio=l1,
+                                               n_jobs=-1,
+                                               max_iter=5000,
+                                               multi_class='ovr',
+                                               random_state=self._random_state). \
+                        fit(X_train_std, y_train)
+                else:
+                    sys.exit('No valid classifier.')
+
+                # Get all weights (coefficients). Those that were selected
+                # are non-zero, otherwise zero
+                self._weight_dict[(C, l1, K)] = model.coef_
+                self._weight_list.append(model.coef_)
+
+                y_test_pred = model.predict(X_test_std)
+
+                if self._scoring == 'accuracy':
+                    score = model.score(X_test_std, y_test)
+                elif self._scoring == 'f1':
+                    score = f1_score(y_test, y_test_pred)
+                elif self._scoring == 'precision':
+                    score = precision_score(y_test, y_test_pred)
+                elif self._scoring == 'recall':
+                    score = recall_score(y_test, y_test_pred)
+                elif self._scoring == 'mcc':
+                    score = matthews_corrcoef(y_test, y_test_pred)
+                else:
+                    sys.exit('No valid scoring metric.')
+
+                # check if we need score_all and score_dict
+                self._score_dict[(C, l1, K)] = score
+                self._score_list.append(score)
+
+                # Collect true values and predictions in dictionary
+                predictions = pd.DataFrame({'y_test': y_test, 'y_pred': y_test_pred})
+                predictions.index = X_test.index
+
+                # calculate predict_proba for current train/test and weight
+                # initialization
+                self._predictions_dict[(C, l1, K)] = predictions
+                if self._classifier == 'logreg':
+                    self._probas[(C, l1, K)] = pd.DataFrame(model.predict_proba(X_test_std),
+                                                            index=X_test.index)
