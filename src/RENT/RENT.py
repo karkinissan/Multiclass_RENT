@@ -359,15 +359,17 @@ class RENT_Base(ABC):
         """
         if not hasattr(self, '_best_C'):
             sys.exit('Run train() first!')
-        print("Best C:", self._best_C)
-        print("Best L1_ratio:", self._best_l1_ratio)
-        #Loop through all K models
+        if self._verbose > 1:
+            print("Best C:", self._best_C)
+            print("Best L1_ratio:", self._best_l1_ratio)
+
+        # Loop through all K models
         weight_list = [self._weight_dict[(self._best_C,
                                                  self._best_l1_ratio,
                                                  K)] for K in range(self._K)]
         weight_array = np.vstack(weight_list)
 
-        #Compute results based on weights
+        # Compute results based on weights
         counts = np.count_nonzero(weight_array, axis=0)
         self._perc = counts / len(weight_array)
 
