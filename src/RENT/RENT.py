@@ -1442,6 +1442,7 @@ class RENT_Classification(RENT_Base):
                     if k[0] == C and k[1] == l1:
                         vec.loc[self._probas[k].index,count] = \
                         self._probas[k].iloc[:, 1].values
+                        vec = vec.copy()
                         count += 1
                 vec = vec.iloc[:, 1:]
                 self._pred_proba_dict[(C, l1)] = vec
