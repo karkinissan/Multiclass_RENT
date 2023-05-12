@@ -305,7 +305,7 @@ class RENT_Base(ABC):
                     # C, l1 and K
                     nz = len(np.where(pd.DataFrame(self._weight_dict[(C, l1, K)])==0)[0])
                     # count += % of zero coeffs
-                    count = count + nz / len(self._feat_names) / self._num_classes
+                    count = count + nz / len(self._feat_names) / 1 if self._num_classes == 2 else self._num_classes
                 # Divide by total number of train test splits??? Why?
                 count = count / (self._K)
                 self._zeros_df.loc[l1, C] = count

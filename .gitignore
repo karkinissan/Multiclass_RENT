@@ -114,3 +114,5 @@ src/RENT/__pycache__/RENT_parallel.cpython-38.pyc
 
 
 src/RENT/.ipynb_checkpoints
+
+scripts/*
