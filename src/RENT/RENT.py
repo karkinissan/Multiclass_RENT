@@ -373,9 +373,8 @@ class RENT_Base(ABC):
         counts = np.count_nonzero(weight_array, axis=0)
         self._perc = counts / len(weight_array)
 
-        means = np.mean(weight_array, axis=0)
         abs_means = np.apply_along_axis(self.calculate_mean, 0, weight_array)
-        stds = np.std(weight_array, axis=0)
+        stds = np.apply_along_axis(self.calculate_sd, 0, weight_array)
 
         signum = np.apply_along_axis(self._sign_vote, 0, weight_array)
         t_test = t.cdf(
@@ -983,6 +982,9 @@ class RENT_Base(ABC):
         else:
             return num ** -1
 
+    def get_reshape_dim(self):
+        return 1 if self._num_classes == 2 else self._num_classes
+
     def _sign_vote(self, arr):
         """
         Calculate tau_2.
@@ -998,7 +1000,7 @@ class RENT_Base(ABC):
             Inverted value. 
         """
         # return np.abs(np.sum(np.sign(arr))) / len(arr)
-        return np.sum(np.abs(np.sum(np.sign(arr.reshape(-1, self._num_classes)),
+        return np.sum(np.abs(np.sum(np.sign(arr.reshape(-1, self.get_reshape_dim())),
                                     axis=0))) / len(arr)
 
     def calculate_mean(self, arr):
@@ -1008,23 +1010,38 @@ class RENT_Base(ABC):
         Calcuate column wise mean of the values in the array.
         The column wise means are then absoluted and another mean is taken.
         """
-        return np.mean(np.abs(np.mean(arr.reshape(-1, self._num_classes), axis=0)))
+        return np.mean(np.abs(np.mean(arr.reshape(-1, self.get_reshape_dim()), axis=0)))
+
+    def calculate_sd(self, arr):
+        """
+        Each array is a (K,num_classes) size array.
+        Which is the coefficients for every train test split model.
+        Calculate column wise standard of the values in the array.
+        The column wise means are then absoluted and another mean is taken.
+        """
+        return np.mean(np.std(arr.reshape(-1, self.get_reshape_dim()), axis=0))
 
     def _min_max(self, arr):
         """
-        Min-max standardization. 
-        
+        Min-max standardization.
+
         PARAMETERS
         ----------
         <numpy array>
             ``arr``: Array of numeric values.
-            
+
         RETURNS
         -------
         <numpy array>
             1-d array or matrix of higher dimension.
         """
-        return (arr-np.nanmin(arr)) / (np.nanmax(arr)-np.nanmin(arr))
+        diff = np.nanmax(arr) - np.nanmin(arr)
+        # If the max and min values are same, every value is the same,
+        # return an array of ones.
+        if diff == 0:
+            return arr / np.nanmax(arr)
+        else:
+            return (arr - np.nanmin(arr)) / diff
 
     def _poly_transform_testdata(self, test_data):
         """
@@ -2299,7 +2316,8 @@ class RENT_Multi_Classification(RENT_Classification):
                 X_train, X_test, y_train, y_test = train_test_split(
                         self._data, self._target,
                         test_size=self._random_testsizes[K],
-                        stratify=self._target, random_state=self._random_state)
+                        stratify=self._target,
+                        random_state=K if self._random_state else None)
 
                 self._X_test = X_test
 
