@@ -30,7 +30,7 @@ my_l1_ratios = [0, 0.25, 0.5, 0.75, 1]
 
 
 # Define setting for RENT
-analysis = RENT.RENT_Multi_Classification(data=train_data,
+analysis = RENT.RENT_Classification(data=train_data,
                                           target=train_labels,
                                           feat_names=train_data.columns,
                                           C=my_C_params,
